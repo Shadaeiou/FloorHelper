@@ -1,0 +1,8 @@
+@import './utils/_base.scss';
+@import './modules/App/App.scss';
+
+html, body, #root, .app-container {
+    height:           100%;
+    width:            100%;
+    background-color: lightgray;
+}
