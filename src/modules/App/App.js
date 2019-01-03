@@ -61,10 +61,16 @@ class App extends React.Component  {
         this.planks            = [];
         this.types             = [];
         this.totalCuts         = 0;
+        this.plankCt           = 1;
+        this.totalWaste        = 0;
+        this.xCarryOver        = 0.25;
         this.state             = {
             room_w:         10,
             room_h:         10,
-            plank_w:        54.25,
+            room_w_in:      120,
+            room_h_in:      120,
+            // plank_w:        54.25,
+            plank_w:        59.5,
             plank_h:        7.5,
             wall_gap:       0.25,
             min_end_plank:  12,
@@ -78,7 +84,7 @@ class App extends React.Component  {
 
     drawRoom() {
         // Draw the room, start at 0,0 and draw a box to w/h converted to inches from feet (*=12)
-        this.drawBox({x: 0, y: 0}, {x: this.state.room_w*12, y: this.state.room_h*12});
+        this.drawBox({x: 0, y: 0}, {x: this.state.room_w_in, y: this.state.room_h_in});
     }
 
     clearCanvas() {
@@ -123,8 +129,8 @@ class App extends React.Component  {
         var w  = this.state.plank_w*1;
         var h  = this.state.plank_h*1;
         var wg = this.state.wall_gap*1;
-        var rw = this.state.room_w*12 - wg;
-        var rh = this.state.room_h*12 - wg;
+        var rw = this.state.room_w_in - wg;
+        var rh = this.state.room_h_in - wg;
         var ep = this.state.min_end_plank*1;
 
         // Avoid that infinite for loop
@@ -133,152 +139,241 @@ class App extends React.Component  {
         // Clear planks
         this.planks = [];
 
-        var xCarryOver    = wg; // End of a row the left over to be used on the next row
-        var plankCt       = 1;
-        var totalWaste    = 0;
+        this.xCarryOver   = wg; // End of a row the left over to be used on the next row
+        this.plankCt      = 1;
+        this.totalWaste   = 0;
         this.totalCuts    = 0;
         this.currentColor = 0;
         this.types        = [{color: this.Colors[this.currentColor++].code, length: this.state.plank_w, direction: 'middle'}];
 
-        // Depending on direction
-        if (this.state.direction == 'left') {
-            for (let y = wg; y <= rh; y+=h) {
-                for (let x = wg; x <= rw; x+=w) {
-                    if (xCarryOver != wg) {
-                        // Check to see if the carryover is greater than the min end plank
-                        if (xCarryOver >= ep) {
-                            this.planks.push({id: plankCt++, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: xCarryOver, y: y+h}});
-                            x          = xCarryOver;
-                            xCarryOver = wg;
-                        }
-                        else { // If it's not, you gotta scrap it and start from 0
-                            plankCt++;
-                            totalWaste += xCarryOver - wg;
-                            xCarryOver = wg;
-                        }
-                    }
-                    if (x + w > rw) {
-                        // Check to see if the end plank is greater than the min end plank
-                        if (rw - x >= ep) {
-                            this.planks.push({id: plankCt, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: rw, y: y+h}});
-                            xCarryOver = w - (rw - x) + wg;
-                            this.totalCuts++;
-                        }
-                        else { // If it's not, you gotta cut the first end piece shorter
-                            // Remove all planks from this row besides the first plank
-                            // Find out how much the end plank needs to get it to the min end plank
-                            // Remove that amount from the first plank
-                            // Reset this row x = first plank's new length
-                            let proper    = [];
-                            let newLength = ep - (rw - x);
-                            for (let ct = 0; ct < this.planks.length; ct++) {
-                                if (this.planks[ct].row != y) {
-                                    proper.push(this.planks[ct]);
-                                }
-                                else {
-                                    if (this.planks[ct].column == wg) {
-                                        let newX = this.planks[ct].btmRight.x - newLength;
-                                        
-                                        // If the new plank is too short just get rid of it
-                                        if (newX < ep) {
-                                            totalWaste += this.planks[ct].btmRight.x - this.planks[ct].topLeft.x;
-                                            x = wg - w;
-                                            plankCt = this.planks[ct].id + 1;
-                                        }
-                                        else {
-                                            this.planks[ct].btmRight.x = newX;
-                                            plankCt = this.planks[ct].id + 1;
-                                            totalWaste += newLength;
-                                            x = this.planks[ct].btmRight.x - w;
-                                            proper.push(this.planks[ct]);
-                                        }
-                                    }
-                                }
-                            }
-                            this.planks = proper;
-                            this.totalCuts++;
-                        }
-                    }
-                    else {
-                        this.planks.push({id: plankCt++, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: x+w, y: y+h}});
-                    }
-                }
+        for (let y = wg; y <= rh; y+=h) {
+            // Depending on direction
+            if (this.state.direction == 'left') {
+                this.addLeftRightRow(y);
             }
         }
-        else {
-            for (let y = wg; y <= rh; y+=h) {
-                for (let x = rw; x >= wg; x-=w) {
-                    if (xCarryOver != wg) {
-                        // Check to see if the carryover is greater than the min end plank
-                        if (xCarryOver >= ep) {
-                            this.planks.push({id: plankCt++, row: y, column: x, topLeft: {x: rw - xCarryOver - wg, y: y}, btmRight: {x: rw, y: y+h}});
-                            x          = x - wg - xCarryOver;
-                            xCarryOver = wg;
-                        }
-                        else { // If it's not, you gotta scrap it and start from 0
-                            plankCt++;
-                            totalWaste += xCarryOver + wg;
-                            xCarryOver = wg;
-                        }
-                    }
-                    if (x - w < 0) {
-                        // Check to see if the end plank is at the room edge
-                        if (x >= ep) {
-                            this.planks.push({id: plankCt, row: y, column: x, topLeft: {x: wg, y: y}, btmRight: {x: x, y: y+h}});
-                            xCarryOver = w - x;
-                            this.totalCuts++;
-                        }
-                        else { // If it's not, you gotta cut the first end piece shorter
-                            // Remove all planks from this row besides the first plank
-                            // Find out how much the end plank needs to get it to the min end plank
-                            // Remove that amount from the first plank
-                            // Reset this row x = first plank's new length
-                            let proper    = [];
-                            let newLength = ep - x + wg;
-                            for (let ct = 0; ct < this.planks.length; ct++) {
-                                if (this.planks[ct].row != y) {
-                                    proper.push(this.planks[ct]);
-                                }
-                                else {
-                                    if (this.planks[ct].column == rw) {
-                                        let newX = this.planks[ct].topLeft.x + newLength;
+        // }
+        // else {
+        //     for (let y = wg; y <= rh; y+=h) {
+        //         for (let x = rw; x >= wg; x-=w) {
+        //             if (xCarryOver != wg) {
+        //                 // Check to see if the carryover is greater than the min end plank
+        //                 if (xCarryOver >= ep) {
+        //                     this.planks.push({id: plankCt++, row: y, column: x, topLeft: {x: rw - xCarryOver - wg, y: y}, btmRight: {x: rw, y: y+h}});
+        //                     x          = x - wg - xCarryOver;
+        //                     xCarryOver = wg;
+        //                 }
+        //                 else { // If it's not, you gotta scrap it and start from 0
+        //                     plankCt++;
+        //                     totalWaste += xCarryOver + wg;
+        //                     xCarryOver = wg;
+        //                 }
+        //             }
+        //             if (x - w < 0) {
+        //                 // Check to see if the end plank is at the room edge
+        //                 if (x >= ep) {
+        //                     this.planks.push({id: plankCt, row: y, column: x, topLeft: {x: wg, y: y}, btmRight: {x: x, y: y+h}});
+        //                     xCarryOver = w - x;
+        //                     this.totalCuts++;
+        //                 }
+        //                 else { // If it's not, you gotta cut the first end piece shorter
+        //                     // Remove all planks from this row besides the first plank
+        //                     // Find out how much the end plank needs to get it to the min end plank
+        //                     // Remove that amount from the first plank
+        //                     // Reset this row x = first plank's new length
+        //                     let proper    = [];
+        //                     let newLength = ep - x + wg;
+        //                     for (let ct = 0; ct < this.planks.length; ct++) {
+        //                         if (this.planks[ct].row != y) {
+        //                             proper.push(this.planks[ct]);
+        //                         }
+        //                         else {
+        //                             if (this.planks[ct].column == rw) {
+        //                                 let newX = this.planks[ct].topLeft.x + newLength;
                                         
-                                        // If the new plank is too short just get rid of it
-                                        if (rw - newX < ep) {
-                                            totalWaste += this.planks[ct].btmRight.x - this.planks[ct].topLeft.x;
-                                            x = rw + w;
-                                            plankCt = this.planks[ct].id + 1;
-                                        }
-                                        else {
-                                            this.planks[ct].topLeft.x = newX;
-                                            plankCt = this.planks[ct].id + 1;
-                                            totalWaste += newLength;
-                                            x = this.planks[ct].topLeft.x + w;
-                                            proper.push(this.planks[ct]);
-                                        }
-                                    }
-                                }
-                            }
-                            this.planks = proper;
-                            this.totalCuts++;
-                        }
-                    }
-                    else {
-                        this.planks.push({id: plankCt++, row: y, column: x, topLeft: {x: x-w, y: y}, btmRight: {x: x, y: y+h}});
-                    }
-                }
-            }
-            // IDK Math hard man total waste comes up short for some reason
-            if (xCarryOver != wg) {xCarryOver += wg*2;}
-        }
+        //                                 // If the new plank is too short just get rid of it
+        //                                 if (rw - newX < ep) {
+        //                                     totalWaste += this.planks[ct].btmRight.x - this.planks[ct].topLeft.x;
+        //                                     x = rw + w;
+        //                                     plankCt = this.planks[ct].id + 1;
+        //                                 }
+        //                                 else {
+        //                                     this.planks[ct].topLeft.x = newX;
+        //                                     plankCt = this.planks[ct].id + 1;
+        //                                     totalWaste += newLength;
+        //                                     x = this.planks[ct].topLeft.x + w;
+        //                                     proper.push(this.planks[ct]);
+        //                                 }
+        //                             }
+        //                         }
+        //                     }
+        //                     this.planks = proper;
+        //                     this.totalCuts++;
+        //                 }
+        //             }
+        //             else {
+        //                 this.planks.push({id: plankCt++, row: y, column: x, topLeft: {x: x-w, y: y}, btmRight: {x: x, y: y+h}});
+        //             }
+        //         }
+        //     }
+        //     // IDK Math hard man total waste comes up short for some reason
+        //     if (xCarryOver != wg) {xCarryOver += wg*2;}
+        // }
 
         // Might be some leftover scrap
-        if (xCarryOver != wg) {totalWaste += xCarryOver - wg;}
+        if (this.xCarryOver != this.state.wall_gap) {this.totalWaste += this.xCarryOver - this.state.wall_gap;}
 
         this.setLabels();
         var currState   = this.state;
-        currState.waste = totalWaste;
+        currState.waste = this.totalWaste;
         this.setState(currState);
+    }
+
+    checkJointGap(x, notFromCarryOver) {
+        var w  = this.state.plank_w*1;
+        var h  = this.state.plank_h*1;
+        var wg = this.state.wall_gap*1;
+        var jd = this.state.joint_distance*1;
+
+        // TODO: Calc waste
+        // Check to see if this is the first plank in the row and if it is, see if it lines up with any seams
+        let checkPlank = this.planks[this.planks.length - 1];
+        if (checkPlank.topLeft.x == wg) {
+            // Check to see if the previous row has any joints within joint_distance
+            let prevRow = checkPlank.row - h;
+            if (prevRow > 0) {
+                for (let ct = 0; ct < this.planks.length; ct++) {
+                    if (this.planks[ct].row    != prevRow) {continue;}
+                    if (this.planks[ct].column != wg)      {continue;}
+                    let difference = Math.abs(checkPlank.btmRight.x - this.planks[ct].btmRight.x);
+
+                    // We got an issue
+                    if (difference < jd) {
+                        // Trim this plank to move it away from the joint just enough for the jd
+                        if (checkPlank.btmRight.x >= this.planks[ct].btmRight.x) {
+                            checkPlank.btmRight.x += jd - difference;
+                        }
+                        else {
+                            checkPlank.btmRight.x -= jd - difference;
+                        }
+
+                        if (notFromCarryOver) {
+                            return checkPlank.btmRight.x - w;
+                        }
+                        else {
+                            return checkPlank.btmRight.x;
+                        }
+                    }
+                }
+            }
+        }
+
+        return x;
+    }
+
+    handleCarryOver(x, y) {
+        var h  = this.state.plank_h*1;
+        var wg = this.state.wall_gap*1;
+        var ep = this.state.min_end_plank*1;
+
+        // Check to see if the carryover is greater than the min end plank
+        if (this.xCarryOver >= ep) {
+            this.planks.push({id: this.plankCt++, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: this.xCarryOver, y: y+h}});
+            this.xCarryOver = wg;
+            x               = this.checkJointGap(this.xCarryOver);
+        }
+        else { // If it's not, you gotta scrap it and start from 0
+            this.plankCt++;
+            this.totalWaste += this.xCarryOver - wg;
+            this.xCarryOver  = wg;
+        }
+
+        return x;
+    }
+
+    setXCarryOver(x, y) {
+        var w  = this.state.plank_w*1;
+        var wg = this.state.wall_gap*1;
+        var rw = this.state.room_w_in - wg;
+        var ep = this.state.min_end_plank*1;
+
+        // Remove all planks from this row besides the first plank
+        // Find out how much the end plank needs to get it to the min end plank
+        // Remove that amount from the first plank
+        // Reset this row x = first plank's new length
+        let proper    = [];
+        let newLength = ep - (rw - x);
+        for (let ct = 0; ct < this.planks.length; ct++) {
+            if (this.planks[ct].row != y) {
+                proper.push(this.planks[ct]);
+            }
+            else {
+                if (this.planks[ct].column == wg) {
+                    let newX = this.planks[ct].btmRight.x - newLength;
+                    
+                    // If the new plank is too short just get rid of it
+                    if (newX < ep) {
+                        this.totalWaste += this.planks[ct].btmRight.x - this.planks[ct].topLeft.x;
+                        x                = wg - w;
+                        this.plankCt     = this.planks[ct].id + 1;
+                    }
+                    else {
+                        this.planks[ct].btmRight.x = newX;
+                        this.plankCt               = this.planks[ct].id + 1;
+                        this.totalWaste           += newLength;
+                        x                          = this.planks[ct].btmRight.x - w;
+                        proper.push(this.planks[ct]);
+                    }
+                }
+            }
+        }
+        this.planks = proper;
+        this.totalCuts++;
+        return x;
+    }
+
+    addLeftRightPlank(x, y) {
+        var w  = this.state.plank_w*1;
+        var h  = this.state.plank_h*1;
+        var wg = this.state.wall_gap*1;
+        var rw = this.state.room_w_in - wg;
+        var ep = this.state.min_end_plank*1;
+
+        // Handle any carryover from previous row
+        if (this.xCarryOver != wg) {
+            x = this.handleCarryOver(x, y);
+        }
+
+        // See if there needs to be carryover into next row
+        if (x + w > rw) {
+            // Check to see if the end plank is greater than the min end plank
+            if (rw - x >= ep) {
+                this.planks.push({id: this.plankCt, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: rw, y: y+h}});
+                this.xCarryOver = w - (rw - x) + wg;
+                this.totalCuts++;
+            }
+            else { // If it's not, you gotta cut the first end piece shorter
+                x = this.setXCarryOver(x, y);
+            }
+        }
+        else { // Normal case where an entire plank can be used
+            this.planks.push({id: this.plankCt++, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: x+w, y: y+h}});
+        }
+
+        // Check joint gap
+        x = this.checkJointGap(x, true);
+
+        return x;
+    }
+
+    addLeftRightRow(y) {
+        var w  = this.state.plank_w*1;
+        var wg = this.state.wall_gap*1;
+        var rw = this.state.room_w_in - wg;
+
+        for (let x = wg; x <= rw; x+=w) {
+            x = this.addLeftRightPlank(x, y);
+        }
     }
 
     setLabels() {
@@ -361,6 +456,8 @@ class App extends React.Component  {
     onChange(evt) {
         var currState = this.state;
         currState[evt.target.name] = evt.target.value;
+        if (evt.target.name == 'room_w') {currState.room_w_in = currState.room_w * 12;}
+        if (evt.target.name == 'room_h') {currState.room_h_in = currState.room_h * 12;}
         this.setState(currState, () => {
             this.createPlanks();
             this.drawPlanks();
@@ -381,7 +478,7 @@ class App extends React.Component  {
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Full Planks:</label>{this.getFullPlanksCt()}<br/>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Cuts:</label>{this.totalCuts}
                 </div>
-                <canvas style={{height: this.state.canvas_h+'px', width: this.state.canvas_w+'px', padding: '15px', display: 'block'}} ref={(ref) => (this.canvas = ref)} width={this.state.room_w*12*this.resolution} height={this.state.room_h*12*this.resolution} />
+                <canvas style={{height: this.state.canvas_h+'px', width: this.state.canvas_w+'px', padding: '15px', display: 'block'}} ref={(ref) => (this.canvas = ref)} width={this.state.room_w_in*this.resolution} height={this.state.room_h*12*this.resolution} />
             </div>
         );
     }
