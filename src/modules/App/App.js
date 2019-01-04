@@ -61,20 +61,20 @@ class App extends React.Component  {
         this.planks            = [];
         this.types             = [];
         this.totalCuts         = 0;
-        this.plankCt           = 1;
+        this.plankCt           = 0;
         this.totalWaste        = 0;
+        this.retries           = {};
         this.xCarryOver        = 0.25;
         this.state             = {
             room_w:         10,
             room_h:         10,
             room_w_in:      120,
             room_h_in:      120,
-            // plank_w:        54.25,
-            plank_w:        59.5,
+            plank_w:        54.25,
             plank_h:        7.5,
             wall_gap:       0.25,
-            min_end_plank:  12,
-            joint_distance: 6,
+            min_end_plank:  11,
+            joint_distance: 8,
             canvas_w:       500,
             canvas_h:       500,
             direction:      'left',
@@ -89,6 +89,16 @@ class App extends React.Component  {
 
     clearCanvas() {
         this.canvas.getContext('2d').clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    getPlankByXY(x, y) {
+        var plank = null;
+
+        for (var ct = 0; ct < this.planks.length; ct++) {
+            if (x <= this.planks[ct].btmRight.x && x >= this.planks[ct].topLeft.x && y <= this.planks[ct].btmRight.y && y >= this.planks[ct].topLeft.y) {plank = this.planks[ct];}
+        }
+
+        return plank;
     }
 
     drawBox(topLeft, btmRight, color, label, fillColor) {
@@ -140,16 +150,17 @@ class App extends React.Component  {
         this.planks = [];
 
         this.xCarryOver   = wg; // End of a row the left over to be used on the next row
-        this.plankCt      = 1;
+        this.plankCt      = 0;
         this.totalWaste   = 0;
         this.totalCuts    = 0;
         this.currentColor = 0;
+        this.retries      = {};
         this.types        = [{color: this.Colors[this.currentColor++].code, length: this.state.plank_w, direction: 'middle'}];
 
         for (let y = wg; y <= rh; y+=h) {
             // Depending on direction
             if (this.state.direction == 'left') {
-                this.addLeftRightRow(y);
+                this.addLRRow(y);
             }
         }
         // }
@@ -229,120 +240,133 @@ class App extends React.Component  {
         this.setState(currState);
     }
 
-    checkJointGap(x, notFromCarryOver) {
+    retryFirstPlank() {
         var w  = this.state.plank_w*1;
         var h  = this.state.plank_h*1;
         var wg = this.state.wall_gap*1;
-        var jd = this.state.joint_distance*1;
+        var rw = this.state.room_w_in - wg;
+        var ep = this.state.min_end_plank*1;
 
-        // TODO: Calc waste
+        // Take into account:
+        //      min_end_plank
+        //      joints
+        //      increment retries by one
+        let row = this.planks[this.planks.length - 1].row;
+        let plk = [];
+        for (let ct = 0; ct < this.planks.length; ct++) {
+            if (this.planks[ct].row != row) {plk.push(this.planks[ct]);}
+        }
+        this.planks   = plk;
+        var prevPlank = this.planks[this.planks.length - 1];
+        var prevId    = 0;
+        var prevH     = h * -1 + wg;
+        if (prevPlank) {prevId = prevPlank.id;prevH = prevPlank.row;}
+        var plankId   = prevId + 1;
+        this.plankCt  = plankId;
+        var next      = ep;
+
+        // See if we've already tried this plank
+        if (this.retries[plankId]) {next = ++this.retries[plankId];}
+        else                       {this.retries[plankId] = next;  }
+
+        if (next > w)   {console.log('Can\'t work won\'t work...');return false;}
+        if (next >= rw) {console.log('Can\'t work won\'t work...');return false;}
+
+        this.planks.push({id: this.plankCt++, row: prevH + h, column: wg, topLeft: {x: wg, y: prevH + h}, btmRight: {x: wg + next, y: prevH + h + h}});
+
+        if (!this.isValidJointGap()) {
+            return this.retryFirstPlank();
+        }
+
+        return next + (w * -1 + wg);
+    }
+
+    isValidJointGap() {
+        var h  = this.state.plank_h*1;
+        var wg = this.state.wall_gap*1;
+        var jd = this.state.joint_distance*1;
+        var rw = this.state.room_w_in*1;
+
         // Check to see if this is the first plank in the row and if it is, see if it lines up with any seams
         let checkPlank = this.planks[this.planks.length - 1];
-        if (checkPlank.topLeft.x == wg) {
-            // Check to see if the previous row has any joints within joint_distance
-            let prevRow = checkPlank.row - h;
-            if (prevRow > 0) {
-                for (let ct = 0; ct < this.planks.length; ct++) {
-                    if (this.planks[ct].row    != prevRow) {continue;}
-                    if (this.planks[ct].column != wg)      {continue;}
-                    let difference = Math.abs(checkPlank.btmRight.x - this.planks[ct].btmRight.x);
+
+        // Check to see if the previous row has any joints within joint_distance
+        let prevRow = checkPlank.row - h;
+        if (prevRow > 0) {
+            for (let ct = 0; ct < this.planks.length; ct++) {
+                if (this.planks[ct].row != prevRow) {continue;}
+                if (checkPlank.topLeft.x == wg) {
+                    // This is a left most plank test with the btmRight
+                    let rightDiff = Math.abs(checkPlank.btmRight.x - this.planks[ct].btmRight.x);
+                    let leftDiff  = Math.abs(checkPlank.btmRight.x - this.planks[ct].topLeft.x);
 
                     // We got an issue
-                    if (difference < jd) {
-                        // Trim this plank to move it away from the joint just enough for the jd
-                        if (checkPlank.btmRight.x >= this.planks[ct].btmRight.x) {
-                            checkPlank.btmRight.x += jd - difference;
-                        }
-                        else {
-                            checkPlank.btmRight.x -= jd - difference;
-                        }
+                    if (rightDiff < jd || leftDiff < jd) {
+                        return false;
+                    }
+                }
+                else if (checkPlank.btmRight.x == rw - wg) {
+                    // This is a right most plank test with the topLeft
+                    let rightDiff = Math.abs(checkPlank.topLeft.x - this.planks[ct].btmRight.x);
+                    let leftDiff  = Math.abs(checkPlank.topLeft.x - this.planks[ct].topLeft.x);
 
-                        if (notFromCarryOver) {
-                            return checkPlank.btmRight.x - w;
-                        }
-                        else {
-                            return checkPlank.btmRight.x;
-                        }
+                    // We got an issue
+                    if (rightDiff < jd || leftDiff < jd) {
+                        return false;
+                    }
+                }
+                else { 
+                    // This is a middle plank test both ends
+                    let lrDiff = Math.abs(checkPlank.topLeft.x  - this.planks[ct].btmRight.x);
+                    let llDiff = Math.abs(checkPlank.topLeft.x  - this.planks[ct].topLeft.x );
+                    let rrDiff = Math.abs(checkPlank.btmRight.x - this.planks[ct].btmRight.x);
+                    let rlDiff = Math.abs(checkPlank.btmRight.x - this.planks[ct].topLeft.x );
+
+                    // We got an issue
+                    if (lrDiff < jd || llDiff < jd || rrDiff < jd || rlDiff < jd) {
+                        return false;
                     }
                 }
             }
         }
 
-        return x;
+        return true;
     }
 
     handleCarryOver(x, y) {
         var h  = this.state.plank_h*1;
+        var w  = this.state.plank_w*1;
         var wg = this.state.wall_gap*1;
         var ep = this.state.min_end_plank*1;
 
         // Check to see if the carryover is greater than the min end plank
         if (this.xCarryOver >= ep) {
             this.planks.push({id: this.plankCt++, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: this.xCarryOver, y: y+h}});
+            var plankLength = this.xCarryOver;
             this.xCarryOver = wg;
-            x               = this.checkJointGap(this.xCarryOver);
+            if (this.isValidJointGap()) {
+                return (w - plankLength) * -1;
+            }
+            else {
+                return this.retryFirstPlank();
+            }
         }
         else { // If it's not, you gotta scrap it and start from 0
             this.plankCt++;
             this.totalWaste += this.xCarryOver - wg;
             this.xCarryOver  = wg;
+            x                = w * -1 + wg;
         }
 
         return x;
     }
 
-    setXCarryOver(x, y) {
-        var w  = this.state.plank_w*1;
-        var wg = this.state.wall_gap*1;
-        var rw = this.state.room_w_in - wg;
-        var ep = this.state.min_end_plank*1;
-
-        // Remove all planks from this row besides the first plank
-        // Find out how much the end plank needs to get it to the min end plank
-        // Remove that amount from the first plank
-        // Reset this row x = first plank's new length
-        let proper    = [];
-        let newLength = ep - (rw - x);
-        for (let ct = 0; ct < this.planks.length; ct++) {
-            if (this.planks[ct].row != y) {
-                proper.push(this.planks[ct]);
-            }
-            else {
-                if (this.planks[ct].column == wg) {
-                    let newX = this.planks[ct].btmRight.x - newLength;
-                    
-                    // If the new plank is too short just get rid of it
-                    if (newX < ep) {
-                        this.totalWaste += this.planks[ct].btmRight.x - this.planks[ct].topLeft.x;
-                        x                = wg - w;
-                        this.plankCt     = this.planks[ct].id + 1;
-                    }
-                    else {
-                        this.planks[ct].btmRight.x = newX;
-                        this.plankCt               = this.planks[ct].id + 1;
-                        this.totalWaste           += newLength;
-                        x                          = this.planks[ct].btmRight.x - w;
-                        proper.push(this.planks[ct]);
-                    }
-                }
-            }
-        }
-        this.planks = proper;
-        this.totalCuts++;
-        return x;
-    }
-
-    addLeftRightPlank(x, y) {
+    addLRPlank(x, y) {
         var w  = this.state.plank_w*1;
         var h  = this.state.plank_h*1;
         var wg = this.state.wall_gap*1;
         var rw = this.state.room_w_in - wg;
         var ep = this.state.min_end_plank*1;
-
-        // Handle any carryover from previous row
-        if (this.xCarryOver != wg) {
-            x = this.handleCarryOver(x, y);
-        }
 
         // See if there needs to be carryover into next row
         if (x + w > rw) {
@@ -352,8 +376,11 @@ class App extends React.Component  {
                 this.xCarryOver = w - (rw - x) + wg;
                 this.totalCuts++;
             }
+            else if (w >= rw) { // If for some reason the w of the plank is longer than the rw...
+                this.planks.push({id: this.plankCt, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: rw, y: y+h}});
+            }
             else { // If it's not, you gotta cut the first end piece shorter
-                x = this.setXCarryOver(x, y);
+                return this.retryFirstPlank();
             }
         }
         else { // Normal case where an entire plank can be used
@@ -361,29 +388,47 @@ class App extends React.Component  {
         }
 
         // Check joint gap
-        x = this.checkJointGap(x, true);
+        if (!this.isValidJointGap()) {
+            return this.retryFirstPlank();
+        }
 
         return x;
     }
 
-    addLeftRightRow(y) {
+    addLRRow(y) {
         var w  = this.state.plank_w*1;
         var wg = this.state.wall_gap*1;
         var rw = this.state.room_w_in - wg;
 
         for (let x = wg; x <= rw; x+=w) {
-            x = this.addLeftRightPlank(x, y);
+            // Handle any carryover from previous row
+            if (this.xCarryOver != wg) {
+                x = this.handleCarryOver(x, y);
+                if (x == false) {return;}
+                continue;
+            }
+
+            x = this.addLRPlank(x, y);
+            if (x == false) {return;}
         }
     }
 
     setLabels() {
+        var w           = this.state.plank_w*1;
+        var currPlankId = 1;
+        var fullPlanks  = 0;
+        var totalCuts   = 0;
+        var totalWaste  = 0;
         for (var ct = 0; ct < this.planks.length; ct++) {
             var plank = this.planks[ct];
-            // Find the plank type, length, and set label
+
+            // Find the plank type and calculate length
             plank.length    = plank.btmRight.x - plank.topLeft.x;
             plank.direction = (plank.topLeft.x == this.state.wall_gap) ? 'left' : 'right';
             for (var ct2 = 0; ct2 < this.types.length; ct2++) {
-                if (this.types[ct2].direction == plank.direction && this.types[ct2].length == plank.length) {plank.type = this.types[ct2];}
+                if (this.types[ct2].direction == plank.direction && this.types[ct2].length == plank.length) {
+                    plank.type = this.types[ct2];
+                }
             }
 
             // New category
@@ -393,8 +438,36 @@ class App extends React.Component  {
                 plank.type = this.types[this.types.length - 1];
             }
 
-            plank.label  = plank.length + '" #' + plank.id;
+            // Calc total waste, total cuts, total planks, and actual plank id
+            if (plank.length == w) { // If it's a full board it's just a new plank
+                plank.id = currPlankId++;
+                fullPlanks++;
+            }
+            else {
+                // Check the previous board to see if these belonged to the same board
+                if (ct == 0) {
+                    plank.id = currPlankId++;
+                    totalCuts++;
+                    totalWaste += w - this.planks[ct].length;
+                }
+                else if (this.planks[ct].length + this.planks[ct - 1].length <= w) {
+                    plank.id = currPlankId - 1;
+                    totalCuts++;
+                    totalWaste += w - (this.planks[ct].length + this.planks[ct - 1].length);
+                }
+                else {
+                    plank.id = currPlankId++;
+                    totalCuts++;
+                    totalWaste += w - this.planks[ct].length;
+                }
+            }
+
+            plank.label  = '('+(ct+1)+') '+plank.length + '" #' + plank.id;
         }
+
+        this.fullPlanks = fullPlanks;
+        this.totalCuts  = totalCuts;
+        this.totalWaste = totalWaste;
     }
 
     removePlanksByRow(row) {
@@ -466,6 +539,7 @@ class App extends React.Component  {
     }
 
     render() {
+        var canvas_h = this.state.canvas_w * this.state.room_h_in / this.state.room_w_in;
         return (
             <div className='app-container'>
                 <div style={{display: 'inline-block'}}>
@@ -474,11 +548,11 @@ class App extends React.Component  {
                 <div style={{marginLeft: '15px', display: 'inline-block', position: 'absolute'}}>
                     <h5>Statistics</h5>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Waste:</label>{this.state.waste}&quot;<br/>
-                    <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Planks:</label>{this.planks.length}<br/>
+                    <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Pieces:</label>{this.planks.length}<br/>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Full Planks:</label>{this.getFullPlanksCt()}<br/>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Cuts:</label>{this.totalCuts}
                 </div>
-                <canvas style={{height: this.state.canvas_h+'px', width: this.state.canvas_w+'px', padding: '15px', display: 'block'}} ref={(ref) => (this.canvas = ref)} width={this.state.room_w_in*this.resolution} height={this.state.room_h*12*this.resolution} />
+                <canvas style={{height: canvas_h+'px', width: this.state.canvas_w+'px', padding: '15px', display: 'block'}} ref={(ref) => (this.canvas = ref)} width={this.state.room_w_in*this.resolution} height={this.state.room_h*12*this.resolution} />
             </div>
         );
     }
