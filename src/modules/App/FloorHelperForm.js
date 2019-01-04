@@ -10,8 +10,8 @@ const FloorHelperForm = (props) => {
         </div>
         <div style={{padding: '5px'}}>
             <h5>Plank Dimensions in Inches</h5>
-            <input style={{width: '65px', marginLeft: '10px', marginRight: '8px'}} placeholder="Length" type="number" name='plank_w' value={props.values.plank_w} onChange={props.onChange} />X
-            <input style={{width: '65px', marginLeft: '10px'}} placeholder="Width"  type="number" name='plank_h' value={props.values.plank_h} onChange={props.onChange} />
+            <input style={{width: '65px', marginLeft: '10px', marginRight: '8px'}} step="0.25" placeholder="Length" type="number" name='plank_w' value={props.values.plank_w} onChange={props.onChange} />X
+            <input style={{width: '65px', marginLeft: '10px'}} step="0.25" placeholder="Width"  type="number" name='plank_h' value={props.values.plank_h} onChange={props.onChange} />
         </div>
         <div style={{padding: '5px'}}>
             <h5>Criteria</h5>
@@ -26,19 +26,19 @@ const FloorHelperForm = (props) => {
             <div>
                 <label style={{fontWeight: 'bold', marginTop: '15px'}}>
                     Min. End Plank Length in Inches
-                    <input style={{width: '65px', marginLeft: '10px'}} type="number" placeholder="12" name="min_end_plank" value={props.values.min_end_plank} onChange={props.onChange}/>
+                    <input style={{width: '65px', marginLeft: '10px'}} type="number" step="0.25" placeholder="12" name="min_end_plank" value={props.values.min_end_plank} onChange={props.onChange}/>
                 </label>
             </div>
             <div>
                 <label style={{fontWeight: 'bold', marginTop: '15px'}}>
                     Gap From Wall in Inches
-                    <input style={{width: '65px', marginLeft: '10px'}} type="number" placeholder=".25" name="wall_gap" value={props.values.wall_gap} onChange={props.onChange}/>
+                    <input style={{width: '65px', marginLeft: '10px'}} type="number" step="0.25" placeholder=".25" name="wall_gap" value={props.values.wall_gap} onChange={props.onChange}/>
                 </label>
             </div>
             <div>
                 <label style={{fontWeight: 'bold', marginTop: '15px'}}>
                     Min. Distance Between Joints in Inches
-                    <input style={{width: '65px', marginLeft: '10px'}} type="number" placeholder="6" name="joint_distance" value={props.values.joint_distance} onChange={props.onChange}/>
+                    <input style={{width: '65px', marginLeft: '10px'}} type="number" step="0.25" placeholder="6" name="joint_distance" value={props.values.joint_distance} onChange={props.onChange}/>
                 </label>
             </div>
         </div>

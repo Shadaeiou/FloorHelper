@@ -54,31 +54,39 @@ class App extends React.Component  {
 
     constructor(props) {
         super(props);
-        this.onChange          = this.onChange.bind(this);
-        this.onZoom            = this.onZoom.bind(this);
-        this.onDirectionChange = this.onDirectionChange.bind(this);
-        this.resolution        = 10;
-        this.planks            = [];
-        this.types             = [];
-        this.totalCuts         = 0;
-        this.plankCt           = 0;
-        this.totalWaste        = 0;
-        this.retries           = {};
-        this.xCarryOver        = 0.25;
-        this.state             = {
-            room_w:         10,
-            room_h:         10,
-            room_w_in:      120,
-            room_h_in:      120,
-            plank_w:        54.25,
-            plank_h:        7.5,
-            wall_gap:       0.25,
-            min_end_plank:  11,
-            joint_distance: 8,
-            canvas_w:       500,
-            canvas_h:       500,
-            direction:      'left',
-            waste:          0
+        this.onChange                   = this.onChange.bind(this);
+        this.onZoom                     = this.onZoom.bind(this);
+        this.onDirectionChange          = this.onDirectionChange.bind(this);
+        this.onTweakPlank               = this.onTweakPlank.bind(this);
+        this.onPlankTweakSelectedChange = this.onPlankTweakSelectedChange.bind(this);
+        this.onPatternChange            = this.onPatternChange.bind(this);
+        this.resolution                 = 10;
+        this.planks                     = [];
+        this.types                      = [];
+        this.totalCuts                  = 0;
+        this.plankCt                    = 0;
+        this.totalWaste                 = 0;
+        this.retries                    = {};
+        this.xCarryOver                 = 0.25;
+        this.error                      = null;
+        this.state                      = {
+            room_w:               10,
+            room_h:               10,
+            room_w_in:            120,
+            room_h_in:            120,
+            plank_w:              54.25,
+            plank_h:              7.5,
+            wall_gap:             0.25,
+            min_end_plank:        11,
+            joint_distance:       8,
+            canvas_w:             500,
+            canvas_h:             500,
+            direction:            'left',
+            waste:                0,
+            plank_tweak_value:    0.25,
+            plank_tweak_selected: '1',
+            error:                null,
+            random:               false
         };
     }
 
@@ -155,6 +163,7 @@ class App extends React.Component  {
         this.totalCuts    = 0;
         this.currentColor = 0;
         this.retries      = {};
+        this.error        = null;
         this.types        = [{color: this.Colors[this.currentColor++].code, length: this.state.plank_w, direction: 'middle'}];
 
         for (let y = wg; y <= rh; y+=h) {
@@ -266,11 +275,11 @@ class App extends React.Component  {
         var next      = ep;
 
         // See if we've already tried this plank
-        if (this.retries[plankId]) {next = ++this.retries[plankId];}
-        else                       {this.retries[plankId] = next;  }
+        if (this.retries[plankId]) {next = this.retries[plankId] += 0.25;}
+        else                       {this.retries[plankId]         = next;}
 
-        if (next > w)   {console.log('Can\'t work won\'t work...');return false;}
-        if (next >= rw) {console.log('Can\'t work won\'t work...');return false;}
+        if (next > w)   {if (!this.error) {this.error = 'Could not create pattern with given criteria. Please change criteria before trying again.';}return false;}
+        if (next >= rw) {if (!this.error) {this.error = 'Could not create pattern with given criteria. Please change criteria before trying again.';}return false;}
 
         this.planks.push({id: this.plankCt++, row: prevH + h, column: wg, topLeft: {x: wg, y: prevH + h}, btmRight: {x: wg + next, y: prevH + h + h}});
 
@@ -338,9 +347,11 @@ class App extends React.Component  {
         var w  = this.state.plank_w*1;
         var wg = this.state.wall_gap*1;
         var ep = this.state.min_end_plank*1;
+        var rd = !!this.state.random;
 
         // Check to see if the carryover is greater than the min end plank
         if (this.xCarryOver >= ep) {
+            if (rd) {this.xCarryOver = this.getRandomNumber(ep, this.xCarryOver);}
             this.planks.push({id: this.plankCt++, row: y, column: x, topLeft: {x: x, y: y}, btmRight: {x: this.xCarryOver, y: y+h}});
             var plankLength = this.xCarryOver;
             this.xCarryOver = wg;
@@ -359,6 +370,10 @@ class App extends React.Component  {
         }
 
         return x;
+    }
+
+    getRandomNumber(start, end) {
+        return Math.floor(Math.random() * end) + start;
     }
 
     addLRPlank(x, y) {
@@ -415,6 +430,8 @@ class App extends React.Component  {
 
     setLabels() {
         var w           = this.state.plank_w*1;
+        var wg          = this.state.wall_gap*1;
+        var rw          = this.state.room_w_in*1;
         var currPlankId = 1;
         var fullPlanks  = 0;
         var totalCuts   = 0;
@@ -424,7 +441,15 @@ class App extends React.Component  {
 
             // Find the plank type and calculate length
             plank.length    = plank.btmRight.x - plank.topLeft.x;
-            plank.direction = (plank.topLeft.x == this.state.wall_gap) ? 'left' : 'right';
+            if (plank.topLeft.x == wg) {
+                plank.direction = 'left';
+            }
+            else if (plank.btmRight.x == rw - wg) {
+                plank.direction = 'right';
+            }
+            else {
+                plank.direction = 'middle';
+            }
             for (var ct2 = 0; ct2 < this.types.length; ct2++) {
                 if (this.types[ct2].direction == plank.direction && this.types[ct2].length == plank.length) {
                     plank.type = this.types[ct2];
@@ -462,7 +487,9 @@ class App extends React.Component  {
                 }
             }
 
-            plank.label  = '('+(ct+1)+') '+plank.length + '" #' + plank.id;
+            plank.uid = ct+1;
+
+            plank.label  = '('+plank.uid+') '+plank.length + '" #' + plank.id;
         }
 
         this.fullPlanks = fullPlanks;
@@ -511,8 +538,9 @@ class App extends React.Component  {
         var dir       = 'left';
         if (evt.target.innerText == 'Right to Left') {dir = 'right';}
         currState.direction = dir;
+        this.createPlanks();
+        currState.error = this.error;
         this.setState(currState, () => {
-            this.createPlanks();
             this.drawPlanks();
             this.drawRoom();
         });
@@ -531,8 +559,39 @@ class App extends React.Component  {
         currState[evt.target.name] = evt.target.value;
         if (evt.target.name == 'room_w') {currState.room_w_in = currState.room_w * 12;}
         if (evt.target.name == 'room_h') {currState.room_h_in = currState.room_h * 12;}
+        this.createPlanks();
+        currState.error = this.error;
         this.setState(currState, () => {
-            this.createPlanks();
+            this.drawPlanks();
+            this.drawRoom();
+        });
+    }
+
+    onTweakPlank(evt) {
+        console.log(evt);
+        // var d     = evt.target.name;
+        // var p     = this.state.plank_tweak_selected;
+        // var v     = this.state.plank_tweak_value;
+        // var plank = this.planks.filter(plank => plank.uid == p);
+        // plank     = plank[0];
+
+        // if (d == 'plus') {
+            
+        // }
+    }
+
+    onPlankTweakSelectedChange(evt) {
+        this.setState({plank_tweak_selected:evt.target.value});
+    }
+
+    onPatternChange(evt) {
+        var currState = this.state;
+        var random    = true;
+        if (evt.target.innerText == 'Pattern') {random = false;}
+        currState.random = random;
+        this.createPlanks();
+        currState.error = this.error;
+        this.setState(currState, () => {
             this.drawPlanks();
             this.drawRoom();
         });
@@ -542,6 +601,10 @@ class App extends React.Component  {
         var canvas_h = this.state.canvas_w * this.state.room_h_in / this.state.room_w_in;
         return (
             <div className='app-container'>
+                {this.state.error ? <div className="alert alert-danger fade show" role="alert">
+                    {this.state.error}
+                </div>
+                    : null}
                 <div style={{display: 'inline-block'}}>
                     <FloorHelperForm values={this.state} onChange={this.onChange} onZoom={this.onZoom} onDirectionChange={this.onDirectionChange}/>
                 </div>
@@ -549,8 +612,32 @@ class App extends React.Component  {
                     <h5>Statistics</h5>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Waste:</label>{this.state.waste}&quot;<br/>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Pieces:</label>{this.planks.length}<br/>
+                    <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Planks:</label>{this.planks.length ? this.planks[this.planks.length - 1].id : 0}<br/>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Full Planks:</label>{this.getFullPlanksCt()}<br/>
                     <label style={{marginLeft: '15px', fontWeight: 'bold', marginRight: '5px'}}>Total Cuts:</label>{this.totalCuts}
+                </div>
+                <div style={{marginLeft: '10px'}}>
+                    <div className="btn-group btn-group-toggle" data-toggle="buttons">
+                        <label className="btn btn-secondary active" onClick={this.onPatternChange}>
+                            <input type="radio" autoComplete="off" checked/> Pattern
+                        </label>
+                        <label className="btn btn-secondary" onClick={this.onPatternChange}>
+                            <input type="radio" autoComplete="off"/> Randomized
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <span style={{marginLeft: '15px', fontWeight: 'bold'}}>Modify Plank: </span>
+                    <select style={{marginLeft: '5px'}} value={this.state.plank_tweak_selected} onChange={this.onPlankTweakSelectedChange} id="plank-tweaker-select">
+                        {this.planks.map(plank => {
+                            if (plank.direction == 'left' || plank.direction == 'right') {
+                                return <option key={plank.uid} value={plank.uid}>Plank {plank.uid}</option>;
+                            }
+                        })}
+                    </select>
+                    <button className="btn btn-primary glyphicon glyphicon-plus"  style={{height: '45px', width: '60px', margin: '5px'}} name="plus"  type="button" onClick={this.onTweakPlank}>Plus</button>
+                    <input style={{width: '65px', marginLeft: '10px', marginRight: '8px'}} placeholder=".25" step="0.25" type="number" name='plank_tweak_value' value={this.state.plank_tweak_value} onChange={this.onChange} />
+                    <button className="btn btn-primary glyphicon glyphicon-minus" style={{height: '45px', width: '90px', margin: '5px'}} name="minus" type="button" onClick={this.onTweakPlank}>Minus</button>
                 </div>
                 <canvas style={{height: canvas_h+'px', width: this.state.canvas_w+'px', padding: '15px', display: 'block'}} ref={(ref) => (this.canvas = ref)} width={this.state.room_w_in*this.resolution} height={this.state.room_h*12*this.resolution} />
             </div>
